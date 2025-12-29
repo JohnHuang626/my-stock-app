@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
-import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw } from 'lucide-react';
 
 // --- Firebase Configuration ---
 // 注意：部署時請依照部署指南填入您的真實 Firebase Config
@@ -96,9 +96,41 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass }) => (
   </div>
 );
 
+// 新增：庫存卡片元件
+const InventoryCard = ({ stockId, lots, onUpdate }) => (
+  <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-full">
+    <div>
+      <div className="flex justify-between items-start mb-2">
+        <span className="text-xl font-bold text-slate-800">{stockId}</span>
+        <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">庫存</span>
+      </div>
+      <div className="mb-4">
+        <span className="text-3xl font-bold text-blue-600">{lots}</span>
+        <span className="text-sm text-slate-400 ml-1">張</span>
+      </div>
+    </div>
+    
+    <div className="grid grid-cols-2 gap-2 mt-auto">
+       <button 
+          onClick={() => onUpdate(stockId, -1)}
+          className="flex items-center justify-center gap-1 py-2 px-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
+       >
+          <Minus className="w-4 h-4" /> 賣出
+       </button>
+       <button 
+          onClick={() => onUpdate(stockId, 1)}
+          className="flex items-center justify-center gap-1 py-2 px-3 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-medium"
+       >
+          <Plus className="w-4 h-4" /> 買入
+       </button>
+    </div>
+  </div>
+);
+
 const App = () => {
   const [user, setUser] = useState(null);
   const [data, setData] = useState([]);
+  const [holdings, setHoldings] = useState([]); // 新增：庫存資料
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
@@ -111,6 +143,14 @@ const App = () => {
     lots: '',
   });
   const [editingId, setEditingId] = useState(null);
+
+  // --- Generate Dynamic Years (2024 ~ Current + 5 years) ---
+  const yearOptions = useMemo(() => {
+    const startYear = 2024;
+    const currentYear = new Date().getFullYear();
+    const endYear = Math.max(currentYear + 5, 2030); // 至少顯示到 2030
+    return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
+  }, []);
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
@@ -130,28 +170,30 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
     
-    // 關鍵修改：使用 'public/data' 路徑，讓所有人讀寫同一份資料
-    const q = query(
-      collection(db, 'artifacts', appId, 'public', 'data', 'dividends')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // Fetch Dividends
+    const qData = query(collection(db, 'artifacts', appId, 'public', 'data', 'dividends'));
+    const unsubData = onSnapshot(qData, (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Client-side sorting
       records.sort((a, b) => {
           if (b.year !== a.year) return b.year - a.year;
           return b.month - a.month;
       });
-
       setData(records);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching data:", error);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Fetch Holdings (庫存)
+    const qHoldings = query(collection(db, 'artifacts', appId, 'public', 'data', 'holdings'));
+    const unsubHoldings = onSnapshot(qHoldings, (snapshot) => {
+      const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      records.sort((a, b) => a.stockId.localeCompare(b.stockId)); // Sort by Stock ID
+      setHoldings(records);
+    });
+
+    return () => {
+        unsubData();
+        unsubHoldings();
+    };
   }, [user]);
 
   // --- Actions ---
@@ -196,6 +238,16 @@ const App = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // 庫存更新功能：當使用者在輸入 ETF 代號時，自動帶入庫存張數
+  useEffect(() => {
+    if (formData.stockId && formData.stockId.length >= 4 && !editingId) {
+        const holding = holdings.find(h => h.stockId === formData.stockId.toUpperCase());
+        if (holding) {
+            setFormData(prev => ({ ...prev, lots: holding.lots }));
+        }
+    }
+  }, [formData.stockId, holdings, editingId]);
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -203,7 +255,7 @@ const App = () => {
     const payload = {
       year: parseInt(formData.year),
       month: parseInt(formData.month),
-      stockId: formData.stockId,
+      stockId: formData.stockId.toUpperCase(),
       dividendPerLot: parseFloat(formData.dividendPerLot),
       lots: parseFloat(formData.lots),
       total: parseFloat(formData.dividendPerLot) * parseFloat(formData.lots),
@@ -227,10 +279,85 @@ const App = () => {
     });
   };
 
+  // --- Inventory Actions ---
+
+  // 同步：從股息紀錄中找出每檔股票「最新」的張數，更新到庫存
+  const handleSyncHoldings = async () => {
+      if (!window.confirm("系統將會掃描所有「股息明細」，並以最新的張數更新庫存。確定要執行嗎？")) return;
+      
+      const latestMap = {};
+      
+      // 找出每檔股票最新的紀錄
+      data.forEach(item => {
+          const currentDate = item.year * 100 + item.month;
+          if (!latestMap[item.stockId] || currentDate > latestMap[item.stockId].date) {
+              latestMap[item.stockId] = { date: currentDate, lots: item.lots };
+          }
+      });
+
+      const batch = [];
+      Object.keys(latestMap).forEach(stockId => {
+          // Check if we need to update
+          const currentHolding = holdings.find(h => h.stockId === stockId);
+          if (!currentHolding || currentHolding.lots !== latestMap[stockId].lots) {
+               // Use stockId as doc ID for easy access
+               const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'holdings', stockId);
+               batch.push(setDoc(docRef, { 
+                   stockId, 
+                   lots: latestMap[stockId].lots,
+                   updatedAt: serverTimestamp()
+               }));
+          }
+      });
+
+      if (batch.length > 0) {
+        await Promise.all(batch);
+        alert(`已同步更新 ${batch.length} 檔股票的庫存！`);
+      } else {
+        alert("庫存已經是最新狀態！");
+      }
+  };
+
+  const handleUpdateHolding = async (stockId, change) => {
+      const amount = parseFloat(window.prompt(`請輸入${change > 0 ? '買入' : '賣出'}張數：`, "1"));
+      if (isNaN(amount) || amount <= 0) return;
+
+      const currentHolding = holdings.find(h => h.stockId === stockId);
+      const currentLots = currentHolding ? currentHolding.lots : 0;
+      const newLots = change > 0 ? currentLots + amount : currentLots - amount;
+
+      if (newLots < 0) {
+          alert("賣出張數不能大於庫存！");
+          return;
+      }
+
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'holdings', stockId), {
+          stockId,
+          lots: newLots,
+          updatedAt: serverTimestamp()
+      });
+  };
+
+  const handleAddStock = async () => {
+      const stockId = window.prompt("請輸入新的 ETF 代號 (例如: 0050)：");
+      if (!stockId) return;
+      const lots = parseFloat(window.prompt("請輸入目前持有張數：", "0"));
+      if (isNaN(lots)) return;
+
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'holdings', stockId.toUpperCase()), {
+        stockId: stockId.toUpperCase(),
+        lots: lots,
+        updatedAt: serverTimestamp()
+    });
+  };
+
+
   // --- Calculations ---
   const stats = useMemo(() => {
+    // 只針對 2024 與 2025 做特別比較，但總股息會計算所有年份
     const total2024 = data.filter(d => d.year === 2024).reduce((sum, d) => sum + (d.total || 0), 0);
     const total2025 = data.filter(d => d.year === 2025).reduce((sum, d) => sum + (d.total || 0), 0);
+    const totalAll = data.reduce((sum, d) => sum + (d.total || 0), 0);
     
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
         const month = i + 1;
@@ -250,7 +377,7 @@ const App = () => {
     });
     const stockData = Object.keys(stockMap).map(key => ({ name: key, value: stockMap[key] }));
 
-    return { total2024, total2025, monthlyData, stockData };
+    return { total2024, total2025, totalAll, monthlyData, stockData };
   }, [data]);
 
 
@@ -317,8 +444,8 @@ const App = () => {
             />
              <StatCard 
                 title="歷史總股息" 
-                value={`$${(stats.total2024 + stats.total2025).toLocaleString()}`} 
-                subtext="複利效應持續發酵"
+                value={`$${stats.totalAll.toLocaleString()}`} 
+                subtext="複利效應持續發酵 (含所有年份)"
                 icon={TrendingUp}
                 colorClass="text-purple-600"
             />
@@ -335,6 +462,16 @@ const App = () => {
                 }`}
             >
                 <div className="flex items-center gap-2"><PieIcon className="w-4 h-4"/> 戰情儀表板</div>
+            </button>
+            <button
+                onClick={() => setActiveTab('inventory')}
+                className={`px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'inventory' 
+                    ? 'border-b-2 border-blue-600 text-blue-600' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+            >
+                <div className="flex items-center gap-2"><Briefcase className="w-4 h-4"/> 庫存管理</div>
             </button>
             <button
                 onClick={() => setActiveTab('data')}
@@ -429,6 +566,53 @@ const App = () => {
             </div>
         )}
 
+        {/* Inventory Tab */}
+        {activeTab === 'inventory' && (
+            <div className="space-y-6 animate-fadeIn">
+                 <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">目前持股庫存</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                           管理您的股票張數。這裡的設定會自動帶入「股息明細」新增表單中。
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                         <button 
+                            onClick={handleSyncHoldings}
+                            className="flex items-center gap-2 px-3 py-2 bg-white text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium"
+                        >
+                            <RefreshCw className="w-4 h-4" /> 同步紀錄
+                        </button>
+                        <button 
+                            onClick={handleAddStock}
+                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                        >
+                            <Plus className="w-4 h-4" /> 新增持股
+                        </button>
+                    </div>
+                 </div>
+
+                 {holdings.length === 0 ? (
+                     <div className="bg-white p-12 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-center">
+                        <Briefcase className="w-12 h-12 text-slate-300 mb-4" />
+                        <h3 className="text-lg font-medium text-slate-900 mb-1">目前沒有庫存資料</h3>
+                        <p className="text-slate-500 text-sm mb-6">您可以手動新增，或點擊上方「同步紀錄」從過去的股息表自動建立。</p>
+                     </div>
+                 ) : (
+                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {holdings.map(stock => (
+                            <InventoryCard 
+                                key={stock.id} 
+                                stockId={stock.stockId} 
+                                lots={stock.lots} 
+                                onUpdate={handleUpdateHolding}
+                            />
+                        ))}
+                     </div>
+                 )}
+            </div>
+        )}
+
         {/* Data Tab */}
         {activeTab === 'data' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
@@ -449,10 +633,9 @@ const App = () => {
                                         value={formData.year}
                                         onChange={(e) => setFormData({...formData, year: e.target.value})}
                                     >
-                                        <option value="2024">2024</option>
-                                        <option value="2025">2025</option>
-                                        <option value="2026">2026</option>
-                                        <option value="2027">2027</option>
+                                        {yearOptions.map(year => (
+                                            <option key={year} value={year}>{year}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -479,6 +662,7 @@ const App = () => {
                                     onChange={(e) => setFormData({...formData, stockId: e.target.value})}
                                     required
                                 />
+                                {holdings.length > 0 && <p className="text-[10px] text-blue-500 mt-1">輸入代號後將自動帶入庫存張數</p>}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
