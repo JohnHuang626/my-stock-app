@@ -328,13 +328,17 @@ const App = () => {
     e.preventDefault();
     if (!user) return;
 
+    // 錯誤防護：確保輸入值為數字
+    const dividend = parseFloat(formData.dividendPerLot) || 0;
+    const lots = parseFloat(formData.lots) || 0;
+
     const payload = {
       year: parseInt(formData.year),
       month: parseInt(formData.month),
       stockId: formData.stockId.toUpperCase(),
-      dividendPerLot: parseFloat(formData.dividendPerLot),
-      lots: parseFloat(formData.lots),
-      total: parseFloat(formData.dividendPerLot) * parseFloat(formData.lots),
+      dividendPerLot: dividend,
+      lots: lots,
+      total: dividend * lots,
       updatedAt: serverTimestamp()
     };
 
@@ -451,7 +455,10 @@ const App = () => {
         if (!stockMap[d.stockId]) stockMap[d.stockId] = 0;
         stockMap[d.stockId] += d.total;
     });
-    const stockData = Object.keys(stockMap).map(key => ({ name: key, value: stockMap[key] }));
+    // 修正：將排序邏輯移至 useMemo 內部，避免在渲染時修改資料導致白屏錯誤
+    const stockData = Object.keys(stockMap)
+        .map(key => ({ name: key, value: stockMap[key] }))
+        .sort((a, b) => b.value - a.value);
 
     return { totalCurrent, totalNext, totalAll, monthlyData, stockData };
   }, [data, dashboardYear]); // 相依性加入 dashboardYear
@@ -625,7 +632,8 @@ const App = () => {
                                     </ResponsiveContainer>
                                 </div>
                                 <div className="w-full mt-4 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                                    {stats.stockData.sort((a,b) => b.value - a.value).map((entry, index) => (
+                                    {/* 修正：直接使用已排序好的 stats.stockData，不再於這裡使用 .sort() */}
+                                    {stats.stockData.map((entry, index) => (
                                         <div key={index} className="flex items-center justify-between text-xs">
                                             <div className="flex items-center gap-1">
                                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
