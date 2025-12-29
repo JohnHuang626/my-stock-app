@@ -598,32 +598,46 @@ const App = () => {
 
                 {/* Pie Chart & Empty State */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col">
                         <h3 className="text-lg font-bold text-slate-800 mb-4">ETF 貢獻佔比 (歷史總計)</h3>
-                        <div className="h-64 w-full flex items-center justify-center">
+                        <div className="flex-1 flex flex-col items-center">
                              {stats.stockData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={stats.stockData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={60}
-                                            outerRadius={80}
-                                            fill="#8884d8"
-                                            paddingAngle={5}
-                                            dataKey="value"
-                                        >
-                                            {stats.stockData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip formatter={(val) => `$${val.toLocaleString()}`} />
-                                        <Legend />
-                                    </PieChart>
-                                </ResponsiveContainer>
+                                <>
+                                <div className="h-64 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={stats.stockData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={60}
+                                                outerRadius={80}
+                                                fill="#8884d8"
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                            >
+                                                {stats.stockData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip formatter={(val) => `$${val.toLocaleString()}`} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="w-full mt-4 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                                    {stats.stockData.sort((a,b) => b.value - a.value).map((entry, index) => (
+                                        <div key={index} className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                                <span className="font-medium text-slate-600">{entry.name}</span>
+                                            </div>
+                                            <span className="text-slate-800 font-bold">${entry.value.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                </>
                              ) : (
-                                 <div className="text-slate-400 text-sm">尚無資料，請先匯入數據</div>
+                                 <div className="text-slate-400 text-sm h-64 flex items-center justify-center">尚無資料，請先匯入數據</div>
                              )}
                         </div>
                     </div>
