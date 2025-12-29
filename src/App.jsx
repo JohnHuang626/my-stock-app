@@ -155,35 +155,73 @@ const App = () => {
     return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
   }, []);
 
-  // --- Setting Document Title & Favicon & Apple Touch Icon ---
+  // --- Setting Document Title & Favicon & Apple Touch Icon (Canvas Generated PNG) ---
   useEffect(() => {
     // 1. 設定瀏覽器標籤名稱
     document.title = "存股配息管家 | 我的被動收入儀表板";
 
-    // 2. 設定圖示 (包含 Favicon 與 Apple Touch Icon)
+    // 2. 使用 Canvas 動態繪製 PNG 圖示 (解決 iOS 不支援 SVG 圖示問題)
     const setIcons = () => {
-      // 藍色折線圖 SVG (包含白色背景，確保在 iPhone 上顯示正確)
-      const iconSvg = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="white"/><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17 6 23 6 23 12" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      // 繪製白色背景
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 512, 512);
+
+      // 設定線條樣式 (藍色)
+      ctx.strokeStyle = '#2563eb'; // Tailwind blue-600
+      ctx.lineWidth = 40;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // 座標轉換 (將原始 24x24 的 SVG 座標放大到 512x512)
+      // 保留邊距，實際繪圖區域約 400x400
+      const scale = 400 / 24; 
+      const offsetX = 56;
+      const offsetY = 56;
+
+      const x = (val) => val * scale + offsetX;
+      const y = (val) => val * scale + offsetY;
+
+      // 繪製折線圖: 1,18 -> 8.5,10.5 -> 13.5,15.5 -> 23,6
+      ctx.beginPath();
+      ctx.moveTo(x(1), y(18));
+      ctx.lineTo(x(8.5), y(10.5));
+      ctx.lineTo(x(13.5), y(15.5));
+      ctx.lineTo(x(23), y(6));
+      ctx.stroke();
+
+      // 繪製箭頭: 17,6 -> 23,6 -> 23,12
+      ctx.beginPath();
+      ctx.moveTo(x(17), y(6));
+      ctx.lineTo(x(23), y(6));
+      ctx.lineTo(x(23), y(12));
+      ctx.stroke();
+
+      // 轉換為 PNG 資料連結
+      const iconUrl = canvas.toDataURL('image/png');
 
       // 設定一般瀏覽器 Favicon
       let favicon = document.querySelector("link[rel*='icon']");
       if (!favicon) {
         favicon = document.createElement('link');
         favicon.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(favicon);
+        document.head.appendChild(favicon);
       }
-      favicon.type = 'image/svg+xml';
-      favicon.href = iconSvg;
+      favicon.type = 'image/png';
+      favicon.href = iconUrl;
 
       // 設定 Apple Touch Icon (iOS 主畫面)
       let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
       if (!appleIcon) {
         appleIcon = document.createElement('link');
         appleIcon.rel = 'apple-touch-icon';
-        document.getElementsByTagName('head')[0].appendChild(appleIcon);
+        document.head.appendChild(appleIcon);
       }
-      // 直接使用 SVG Data URI，現代 iOS 支援度良好，且向量圖解析度最高
-      appleIcon.href = iconSvg;
+      appleIcon.href = iconUrl;
     };
     
     setIcons();
