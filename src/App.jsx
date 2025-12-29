@@ -155,25 +155,38 @@ const App = () => {
     return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
   }, []);
 
-  // --- Setting Document Title & Favicon ---
+  // --- Setting Document Title & Favicon & Apple Touch Icon ---
   useEffect(() => {
     // 1. 設定瀏覽器標籤名稱
     document.title = "存股配息管家 | 我的被動收入儀表板";
 
-    // 2. 動態設定瀏覽器圖示 (Favicon)
-    const setFavicon = () => {
-      let link = document.querySelector("link[rel*='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
+    // 2. 設定圖示 (包含 Favicon 與 Apple Touch Icon)
+    const setIcons = () => {
+      // 藍色折線圖 SVG (包含白色背景，確保在 iPhone 上顯示正確)
+      const iconSvg = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="white"/><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17 6 23 6 23 12" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+      // 設定一般瀏覽器 Favicon
+      let favicon = document.querySelector("link[rel*='icon']");
+      if (!favicon) {
+        favicon = document.createElement('link');
+        favicon.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(favicon);
       }
-      link.type = 'image/svg+xml';
-      // 這是一個藍色的趨勢向上折線圖 SVG
-      link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>`;
+      favicon.type = 'image/svg+xml';
+      favicon.href = iconSvg;
+
+      // 設定 Apple Touch Icon (iOS 主畫面)
+      let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
+      if (!appleIcon) {
+        appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        document.getElementsByTagName('head')[0].appendChild(appleIcon);
+      }
+      // 直接使用 SVG Data URI，現代 iOS 支援度良好，且向量圖解析度最高
+      appleIcon.href = iconSvg;
     };
     
-    setFavicon();
+    setIcons();
   }, []);
 
   // --- Auth & Data Fetching ---
