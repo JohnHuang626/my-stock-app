@@ -163,25 +163,26 @@ const App = () => {
     // 2. 使用 Canvas 動態繪製 PNG 圖示 (解決 iOS 不支援 SVG 圖示問題)
     const setIcons = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
+      // 提高解析度至 1024x1024 (原 512x512)
+      canvas.width = 1024;
+      canvas.height = 1024;
       const ctx = canvas.getContext('2d');
 
       // 繪製白色背景
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillRect(0, 0, 1024, 1024);
 
       // 設定線條樣式 (藍色)
       ctx.strokeStyle = '#2563eb'; // Tailwind blue-600
-      ctx.lineWidth = 40;
+      ctx.lineWidth = 80; // 加粗線條以配合更高解析度
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // 座標轉換 (將原始 24x24 的 SVG 座標放大到 512x512)
-      // 保留邊距，實際繪圖區域約 400x400
-      const scale = 400 / 24; 
-      const offsetX = 56;
-      const offsetY = 56;
+      // 座標轉換 (將原始 24x24 的 SVG 座標放大到 1024x1024)
+      // 保留邊距，實際繪圖區域約 800x800
+      const scale = 800 / 24; 
+      const offsetX = 112; // (1024 - 800) / 2
+      const offsetY = 112;
 
       const x = (val) => val * scale + offsetX;
       const y = (val) => val * scale + offsetY;
