@@ -6,8 +6,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw } from 'lucide-react';
 
 // --- Firebase Configuration ---
-// 注意：部署時請依照部署指南填入您的真實 Firebase Config
-const firebaseConfig = {
+// 修正說明：這裡改回自動判斷模式。
+// 1. 在預覽環境 (Canvas) 中，它會讀取系統內建的 __firebase_config，解決 token mismatch 錯誤。
+// 2. 當您下載部署時，因為沒有 __firebase_config，它會自動使用後面的 { apiKey: ... } 設定。
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyBLEzSFnnHjzM4_8VsMgHPq53dx9Y1NYnw",
   authDomain: "my-stock-dividend-6da91.firebaseapp.com",
   projectId: "my-stock-dividend-6da91",
@@ -133,6 +135,7 @@ const App = () => {
   const [holdings, setHoldings] = useState([]); // 新增：庫存資料
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [dashboardYear, setDashboardYear] = useState(2024); // 新增：儀表板年份狀態，預設為2024
   
   // Form State
   const [formData, setFormData] = useState({
@@ -150,6 +153,27 @@ const App = () => {
     const currentYear = new Date().getFullYear();
     const endYear = Math.max(currentYear + 5, 2030); // 至少顯示到 2030
     return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
+  }, []);
+
+  // --- Setting Document Title & Favicon ---
+  useEffect(() => {
+    // 1. 設定瀏覽器標籤名稱
+    document.title = "存股配息管家 | 我的被動收入儀表板";
+
+    // 2. 動態設定瀏覽器圖示 (Favicon)
+    const setFavicon = () => {
+      let link = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.type = 'image/svg+xml';
+      // 這是一個藍色的趨勢向上折線圖 SVG
+      link.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%232563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>`;
+    };
+    
+    setFavicon();
   }, []);
 
   // --- Auth & Data Fetching ---
@@ -354,19 +378,19 @@ const App = () => {
 
   // --- Calculations ---
   const stats = useMemo(() => {
-    // 只針對 2024 與 2025 做特別比較，但總股息會計算所有年份
-    const total2024 = data.filter(d => d.year === 2024).reduce((sum, d) => sum + (d.total || 0), 0);
-    const total2025 = data.filter(d => d.year === 2025).reduce((sum, d) => sum + (d.total || 0), 0);
+    // 改為動態計算：根據 dashboardYear 計算當年與隔年
+    const totalCurrent = data.filter(d => d.year === dashboardYear).reduce((sum, d) => sum + (d.total || 0), 0);
+    const totalNext = data.filter(d => d.year === dashboardYear + 1).reduce((sum, d) => sum + (d.total || 0), 0);
     const totalAll = data.reduce((sum, d) => sum + (d.total || 0), 0);
     
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
         const month = i + 1;
-        const in2024 = data.filter(d => d.year === 2024 && d.month === month).reduce((sum, d) => sum + d.total, 0);
-        const in2025 = data.filter(d => d.year === 2025 && d.month === month).reduce((sum, d) => sum + d.total, 0);
+        const inCurrent = data.filter(d => d.year === dashboardYear && d.month === month).reduce((sum, d) => sum + d.total, 0);
+        const inNext = data.filter(d => d.year === dashboardYear + 1 && d.month === month).reduce((sum, d) => sum + d.total, 0);
         return {
             name: `${month}月`,
-            '2024': in2024,
-            '2025': in2025
+            [dashboardYear]: inCurrent,
+            [dashboardYear + 1]: inNext
         };
     });
 
@@ -377,8 +401,8 @@ const App = () => {
     });
     const stockData = Object.keys(stockMap).map(key => ({ name: key, value: stockMap[key] }));
 
-    return { total2024, total2025, totalAll, monthlyData, stockData };
-  }, [data]);
+    return { totalCurrent, totalNext, totalAll, monthlyData, stockData };
+  }, [data, dashboardYear]); // 相依性加入 dashboardYear
 
 
   // --- Render ---
@@ -429,16 +453,16 @@ const App = () => {
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard 
-                title="2024 總領股息" 
-                value={`$${stats.total2024.toLocaleString()}`} 
+                title={`${dashboardYear} 總領股息`}
+                value={`$${stats.totalCurrent.toLocaleString()}`} 
                 subtext="已實現損益"
                 icon={DollarSign}
                 colorClass="text-emerald-600"
             />
             <StatCard 
-                title="2025 預估/已領股息" 
-                value={`$${stats.total2025.toLocaleString()}`} 
-                subtext={stats.total2025 > stats.total2024 ? `比去年增長 ${(stats.total2025 - stats.total2024).toLocaleString()}` : '持續累積中'}
+                title={`${dashboardYear + 1} 預估/已領股息`}
+                value={`$${stats.totalNext.toLocaleString()}`} 
+                subtext={stats.totalNext > stats.totalCurrent ? `比去年增長 ${(stats.totalNext - stats.totalCurrent).toLocaleString()}` : '持續累積中'}
                 icon={Database}
                 colorClass="text-blue-600"
             />
@@ -491,7 +515,16 @@ const App = () => {
                 
                 {/* Monthly Chart */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                    <h3 className="text-lg font-bold text-slate-800 mb-6">每月現金流比較 (2024 vs 2025)</h3>
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-lg font-bold text-slate-800">每月現金流比較 ({dashboardYear} vs {dashboardYear + 1})</h3>
+                        <select 
+                            value={dashboardYear} 
+                            onChange={(e) => setDashboardYear(parseInt(e.target.value))}
+                            className="p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                    </div>
                     <div className="h-80 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={stats.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -504,8 +537,8 @@ const App = () => {
                                     formatter={(value) => `$${value.toLocaleString()}`}
                                 />
                                 <Legend />
-                                <Bar dataKey="2024" name="2024 配息" fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                                <Bar dataKey="2025" name="2025 配息" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Bar dataKey={dashboardYear} name={`${dashboardYear} 配息`} fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Bar dataKey={dashboardYear + 1} name={`${dashboardYear + 1} 配息`} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -514,7 +547,7 @@ const App = () => {
                 {/* Pie Chart & Empty State */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                        <h3 className="text-lg font-bold text-slate-800 mb-4">ETF 貢獻佔比</h3>
+                        <h3 className="text-lg font-bold text-slate-800 mb-4">ETF 貢獻佔比 (歷史總計)</h3>
                         <div className="h-64 w-full flex items-center justify-center">
                              {stats.stockData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
