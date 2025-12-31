@@ -3,7 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
-import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw, Sparkles, Search, ExternalLink } from 'lucide-react';
 
 // --- Firebase Configuration ---
 // 修正說明：這裡改回自動判斷模式。
@@ -23,7 +23,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- Initial Data from User PDF ---
+// --- Initial Data from User PDF (Served as Local Dividend Database) ---
 const PDF_DATA = [
   // 2024 Data
   { year: 2024, month: 1, stockId: '00878', dividendPerLot: 400, lots: 80 },
@@ -136,6 +136,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashboardYear, setDashboardYear] = useState(2024); // 新增：儀表板年份狀態，預設為2024
+  const [autoFilled, setAutoFilled] = useState(false); // 新增：是否自動帶入的狀態
   
   // Form State
   const [formData, setFormData] = useState({
@@ -314,15 +315,59 @@ const App = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 庫存更新功能：當使用者在輸入 ETF 代號時，自動帶入庫存張數
+  // 自動帶入邏輯：庫存張數 + 配息金額
   useEffect(() => {
-    if (formData.stockId && formData.stockId.length >= 4 && !editingId) {
-        const holding = holdings.find(h => h.stockId === formData.stockId.toUpperCase());
-        if (holding) {
-            setFormData(prev => ({ ...prev, lots: holding.lots }));
-        }
+    if (!formData.stockId || formData.stockId.length < 4 || editingId) return;
+
+    const stockIdUpper = formData.stockId.toUpperCase();
+    let updated = false;
+    let newDividend = formData.dividendPerLot;
+    let newLots = formData.lots;
+
+    // 1. 自動帶入庫存
+    const holding = holdings.find(h => h.stockId === stockIdUpper);
+    if (holding) {
+        newLots = holding.lots;
     }
-  }, [formData.stockId, holdings, editingId]);
+
+    // 2. 自動帶入配息金額 (查詢內建 PDF 資料庫)
+    const seedMatch = PDF_DATA.find(d => 
+        d.year === parseInt(formData.year) && 
+        d.month === parseInt(formData.month) && 
+        d.stockId === stockIdUpper
+    );
+
+    if (seedMatch) {
+        newDividend = seedMatch.dividendPerLot;
+        if (newDividend !== formData.dividendPerLot) {
+            setAutoFilled(true);
+            updated = true;
+        }
+    } else {
+        setAutoFilled(false);
+    }
+
+    if (holding && newLots !== formData.lots) updated = true;
+
+    if (updated) {
+        setFormData(prev => ({ ...prev, lots: newLots, dividendPerLot: newDividend }));
+    }
+
+  }, [formData.stockId, formData.year, formData.month, holdings, editingId]);
+
+  // 當使用者手動修改配息時，隱藏自動帶入提示
+  const handleDividendChange = (e) => {
+      setFormData({...formData, dividendPerLot: e.target.value});
+      setAutoFilled(false);
+  };
+
+  // 外部連結查詢功能
+  const openYahooFinance = () => {
+      if (!formData.stockId) return;
+      // 使用 Yahoo 股市的配息頁面，通常比較穩定且手機友善
+      const url = `https://tw.stock.yahoo.com/quote/${formData.stockId}/dividend`;
+      window.open(url, '_blank');
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -357,6 +402,7 @@ const App = () => {
         dividendPerLot: '',
         lots: '',
     });
+    setAutoFilled(false);
   };
 
   // --- Inventory Actions ---
@@ -761,14 +807,28 @@ const App = () => {
 
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">ETF 代號</label>
-                                <input 
-                                    type="text"
-                                    placeholder="例如: 00878"
-                                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                                    value={formData.stockId}
-                                    onChange={(e) => setFormData({...formData, stockId: e.target.value})}
-                                    required
-                                />
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text"
+                                        placeholder="例如: 00878"
+                                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                        value={formData.stockId}
+                                        onChange={(e) => setFormData({...formData, stockId: e.target.value})}
+                                        required
+                                    />
+                                    {/* 新增配息查詢按鈕 */}
+                                    {formData.stockId.length >= 4 && (
+                                        <button
+                                            type="button"
+                                            onClick={openYahooFinance}
+                                            className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 whitespace-nowrap text-xs font-medium border border-blue-100"
+                                            title="查詢最新配息資訊"
+                                        >
+                                            <Search className="w-3 h-3" />
+                                            查配息
+                                        </button>
+                                    )}
+                                </div>
                                 {holdings.length > 0 && <p className="text-[10px] text-blue-500 mt-1">輸入代號後將自動帶入庫存張數</p>}
                             </div>
 
@@ -780,11 +840,17 @@ const App = () => {
                                         placeholder="0"
                                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                         value={formData.dividendPerLot}
-                                        onChange={(e) => setFormData({...formData, dividendPerLot: e.target.value})}
+                                        onChange={handleDividendChange}
                                         required
                                         min="0"
                                     />
-                                    <p className="text-[10px] text-slate-400 mt-1">請輸入每1000股配息金額</p>
+                                    {autoFilled ? (
+                                        <p className="text-[10px] text-blue-600 mt-1 flex items-center gap-1 animate-pulse">
+                                            <Sparkles className="w-3 h-3" /> 已自動帶入歷史配息
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-400 mt-1">請輸入每1000股配息金額</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-500 mb-1">持有張數</label>
