@@ -136,11 +136,9 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // 修正：動態設定儀表板年份，預設為「去年」，這樣就能比較「去年 vs 今年」
-  // 例如：現在是 2026 年，預設會是 2025，這樣圖表就會顯示 2025 vs 2026
+  // 修正：預設顯示「當年」，例如現在是 2026，就預設顯示 2026
   const [dashboardYear, setDashboardYear] = useState(() => {
-      const currentYear = new Date().getFullYear();
-      return currentYear - 1; 
+      return new Date().getFullYear();
   }); 
   
   const [autoFilled, setAutoFilled] = useState(false); // 新增：是否自動帶入的狀態
@@ -487,19 +485,22 @@ const App = () => {
 
   // --- Calculations ---
   const stats = useMemo(() => {
-    // 改為動態計算：根據 dashboardYear 計算當年與隔年
-    const totalCurrent = data.filter(d => d.year === dashboardYear).reduce((sum, d) => sum + (d.total || 0), 0);
-    const totalNext = data.filter(d => d.year === dashboardYear + 1).reduce((sum, d) => sum + (d.total || 0), 0);
+    // 修正：改為比較「選取的年份 (當年)」與「選取的年份 - 1 (去年)」
+    const currentYear = dashboardYear;
+    const prevYear = dashboardYear - 1;
+
+    const totalCurrent = data.filter(d => d.year === currentYear).reduce((sum, d) => sum + (d.total || 0), 0);
+    const totalPrev = data.filter(d => d.year === prevYear).reduce((sum, d) => sum + (d.total || 0), 0);
     const totalAll = data.reduce((sum, d) => sum + (d.total || 0), 0);
     
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
         const month = i + 1;
-        const inCurrent = data.filter(d => d.year === dashboardYear && d.month === month).reduce((sum, d) => sum + d.total, 0);
-        const inNext = data.filter(d => d.year === dashboardYear + 1 && d.month === month).reduce((sum, d) => sum + d.total, 0);
+        const inCurrent = data.filter(d => d.year === currentYear && d.month === month).reduce((sum, d) => sum + d.total, 0);
+        const inPrev = data.filter(d => d.year === prevYear && d.month === month).reduce((sum, d) => sum + d.total, 0);
         return {
             name: `${month}月`,
-            [dashboardYear]: inCurrent,
-            [dashboardYear + 1]: inNext
+            [currentYear]: inCurrent,
+            [prevYear]: inPrev
         };
     });
 
@@ -508,12 +509,11 @@ const App = () => {
         if (!stockMap[d.stockId]) stockMap[d.stockId] = 0;
         stockMap[d.stockId] += d.total;
     });
-    // 修正：將排序邏輯移至 useMemo 內部，避免在渲染時修改資料導致白屏錯誤
     const stockData = Object.keys(stockMap)
         .map(key => ({ name: key, value: stockMap[key] }))
         .sort((a, b) => b.value - a.value);
 
-    return { totalCurrent, totalNext, totalAll, monthlyData, stockData };
+    return { totalCurrent, totalPrev, totalAll, monthlyData, stockData, currentYear, prevYear };
   }, [data, dashboardYear]); // 相依性加入 dashboardYear
 
 
@@ -565,16 +565,18 @@ const App = () => {
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard 
-                title={`${dashboardYear} 總領股息`}
+                title={`${stats.currentYear} 總領股息 (當年)`}
                 value={`$${stats.totalCurrent.toLocaleString()}`} 
                 subtext="已實現損益"
                 icon={DollarSign}
                 colorClass="text-emerald-600"
             />
             <StatCard 
-                title={`${dashboardYear + 1} 預估/已領股息`}
-                value={`$${stats.totalNext.toLocaleString()}`} 
-                subtext={stats.totalNext > stats.totalCurrent ? `比去年增長 ${(stats.totalNext - stats.totalCurrent).toLocaleString()}` : '持續累積中'}
+                title={`${stats.prevYear} 總領股息 (去年)`}
+                value={`$${stats.totalPrev.toLocaleString()}`} 
+                subtext={stats.totalCurrent > stats.totalPrev 
+                    ? `今年比去年成長 $${(stats.totalCurrent - stats.totalPrev).toLocaleString()}` 
+                    : `今年比去年減少 $${(stats.totalPrev - stats.totalCurrent).toLocaleString()}`}
                 icon={Database}
                 colorClass="text-blue-600"
             />
@@ -628,7 +630,7 @@ const App = () => {
                 {/* Monthly Chart */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-lg font-bold text-slate-800">每月現金流比較 ({dashboardYear} vs {dashboardYear + 1})</h3>
+                        <h3 className="text-lg font-bold text-slate-800">每月現金流比較 ({stats.prevYear} vs {stats.currentYear})</h3>
                         <select 
                             value={dashboardYear} 
                             onChange={(e) => setDashboardYear(parseInt(e.target.value))}
@@ -649,8 +651,8 @@ const App = () => {
                                     formatter={(value) => `$${value.toLocaleString()}`}
                                 />
                                 <Legend />
-                                <Bar dataKey={dashboardYear} name={`${dashboardYear} 配息`} fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                                <Bar dataKey={dashboardYear + 1} name={`${dashboardYear + 1} 配息`} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Bar dataKey={stats.prevYear} name={`${stats.prevYear} 配息 (去年)`} fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Bar dataKey={stats.currentYear} name={`${stats.currentYear} 配息 (當年)`} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -685,7 +687,6 @@ const App = () => {
                                     </ResponsiveContainer>
                                 </div>
                                 <div className="w-full mt-4 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                                    {/* 修正：直接使用已排序好的 stats.stockData，不再於這裡使用 .sort() */}
                                     {stats.stockData.map((entry, index) => (
                                         <div key={index} className="flex items-center justify-between text-xs">
                                             <div className="flex items-center gap-1">
