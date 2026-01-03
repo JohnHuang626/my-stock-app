@@ -135,7 +135,14 @@ const App = () => {
   const [holdings, setHoldings] = useState([]); // 新增：庫存資料
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [dashboardYear, setDashboardYear] = useState(2024); // 新增：儀表板年份狀態，預設為2024
+  
+  // 修正：動態設定儀表板年份，預設為「去年」，這樣就能比較「去年 vs 今年」
+  // 例如：現在是 2026 年，預設會是 2025，這樣圖表就會顯示 2025 vs 2026
+  const [dashboardYear, setDashboardYear] = useState(() => {
+      const currentYear = new Date().getFullYear();
+      return currentYear - 1; 
+  }); 
+  
   const [autoFilled, setAutoFilled] = useState(false); // 新增：是否自動帶入的狀態
   
   // Form State
