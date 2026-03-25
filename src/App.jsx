@@ -3,12 +3,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
-import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw, Sparkles, Search, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, Database, TrendingUp, DollarSign, Calendar, PieChart as PieIcon, UploadCloud, Users, Briefcase, Minus, RefreshCw, Sparkles, Search, Download, X, Smartphone } from 'lucide-react';
 
 // --- Firebase Configuration ---
-// 修正說明：這裡改回自動判斷模式。
-// 1. 在預覽環境 (Canvas) 中，它會讀取系統內建的 __firebase_config，解決 token mismatch 錯誤。
-// 2. 當您下載部署時，因為沒有 __firebase_config，它會自動使用後面的 { apiKey: ... } 設定。
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyBLEzSFnnHjzM4_8VsMgHPq53dx9Y1NYnw",
   authDomain: "my-stock-dividend-6da91.firebaseapp.com",
@@ -23,7 +20,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- Initial Data from User PDF (Served as Local Dividend Database) ---
+// --- Initial Data ---
 const PDF_DATA = [
   // 2024 Data
   { year: 2024, month: 1, stockId: '00878', dividendPerLot: 400, lots: 80 },
@@ -98,7 +95,6 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass }) => (
   </div>
 );
 
-// 新增：庫存卡片元件
 const InventoryCard = ({ stockId, lots, onUpdate }) => (
   <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-full">
     <div>
@@ -132,18 +128,17 @@ const InventoryCard = ({ stockId, lots, onUpdate }) => (
 const App = () => {
   const [user, setUser] = useState(null);
   const [data, setData] = useState([]);
-  const [holdings, setHoldings] = useState([]); // 新增：庫存資料
+  const [holdings, setHoldings] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // 修正：預設顯示「當年」，例如現在是 2026，就預設顯示 2026
-  const [dashboardYear, setDashboardYear] = useState(() => {
-      return new Date().getFullYear();
-  }); 
+  const [dashboardYear, setDashboardYear] = useState(() => new Date().getFullYear()); 
+  const [autoFilled, setAutoFilled] = useState(false); 
+
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   
-  const [autoFilled, setAutoFilled] = useState(false); // 新增：是否自動帶入的狀態
-  
-  // Form State
   const [formData, setFormData] = useState({
     year: new Date().getFullYear(),
     month: new Date().getMonth() + 1,
@@ -153,47 +148,48 @@ const App = () => {
   });
   const [editingId, setEditingId] = useState(null);
 
-  // --- Generate Dynamic Years (2024 ~ Current + 5 years) ---
   const yearOptions = useMemo(() => {
     const startYear = 2024;
     const currentYear = new Date().getFullYear();
-    const endYear = Math.max(currentYear + 5, 2030); // 至少顯示到 2030
+    const endYear = Math.max(currentYear + 5, 2030); 
     return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
   }, []);
 
-  // --- Setting Document Title & Favicon & Apple Touch Icon (Canvas Generated PNG) ---
+  // --- Install Prompt Listener ---
   useEffect(() => {
-    // 1. 設定瀏覽器標籤名稱
+    // 監聽瀏覽器的安裝提示事件 (需支援 PWA 的環境才會觸發)
+    const handleBeforeInstallPrompt = (e) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  // --- Setting Document Title & PWA Manifest ---
+  useEffect(() => {
     document.title = "存股配息管家 | 我的被動收入儀表板";
 
-    // 2. 使用 Canvas 動態繪製 PNG 圖示 (解決 iOS 不支援 SVG 圖示問題)
-    const setIcons = () => {
+    const setupPWA = () => {
       const canvas = document.createElement('canvas');
-      // 提高解析度至 1024x1024 (原 512x512)
       canvas.width = 1024;
       canvas.height = 1024;
       const ctx = canvas.getContext('2d');
 
-      // 繪製白色背景
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, 1024, 1024);
-
-      // 設定線條樣式 (藍色)
-      ctx.strokeStyle = '#2563eb'; // Tailwind blue-600
-      ctx.lineWidth = 80; // 加粗線條以配合更高解析度
+      ctx.strokeStyle = '#2563eb'; 
+      ctx.lineWidth = 80; 
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // 座標轉換 (將原始 24x24 的 SVG 座標放大到 1024x1024)
-      // 保留邊距，實際繪圖區域約 800x800
       const scale = 800 / 24; 
-      const offsetX = 112; // (1024 - 800) / 2
+      const offsetX = 112; 
       const offsetY = 112;
 
       const x = (val) => val * scale + offsetX;
       const y = (val) => val * scale + offsetY;
 
-      // 繪製折線圖: 1,18 -> 8.5,10.5 -> 13.5,15.5 -> 23,6
       ctx.beginPath();
       ctx.moveTo(x(1), y(18));
       ctx.lineTo(x(8.5), y(10.5));
@@ -201,17 +197,15 @@ const App = () => {
       ctx.lineTo(x(23), y(6));
       ctx.stroke();
 
-      // 繪製箭頭: 17,6 -> 23,6 -> 23,12
       ctx.beginPath();
       ctx.moveTo(x(17), y(6));
       ctx.lineTo(x(23), y(6));
       ctx.lineTo(x(23), y(12));
       ctx.stroke();
 
-      // 轉換為 PNG 資料連結
       const iconUrl = canvas.toDataURL('image/png');
 
-      // 設定一般瀏覽器 Favicon
+      // 1. Set Favicons
       let favicon = document.querySelector("link[rel*='icon']");
       if (!favicon) {
         favicon = document.createElement('link');
@@ -221,7 +215,6 @@ const App = () => {
       favicon.type = 'image/png';
       favicon.href = iconUrl;
 
-      // 設定 Apple Touch Icon (iOS 主畫面)
       let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
       if (!appleIcon) {
         appleIcon = document.createElement('link');
@@ -229,14 +222,42 @@ const App = () => {
         document.head.appendChild(appleIcon);
       }
       appleIcon.href = iconUrl;
+
+      // 2. Inject PWA Manifest dynamically
+      const manifest = {
+        name: "存股配息管家",
+        short_name: "配息管家",
+        description: "我的被動收入儀表板",
+        start_url: ".",
+        display: "standalone",
+        background_color: "#f8fafc",
+        theme_color: "#2563eb",
+        icons: [
+          {
+            src: iconUrl,
+            sizes: "1024x1024",
+            type: "image/png",
+            purpose: "any maskable"
+          }
+        ]
+      };
+
+      const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+      const manifestUrl = URL.createObjectURL(manifestBlob);
+      let manifestLink = document.querySelector("link[rel='manifest']");
+      if (!manifestLink) {
+        manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        document.head.appendChild(manifestLink);
+      }
+      manifestLink.href = manifestUrl;
     };
     
-    setIcons();
+    setupPWA();
   }, []);
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
-    // 啟用匿名登入
     const initAuth = async () => {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
@@ -252,7 +273,6 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Fetch Dividends
     const qData = query(collection(db, 'artifacts', appId, 'public', 'data', 'dividends'));
     const unsubData = onSnapshot(qData, (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -264,11 +284,10 @@ const App = () => {
       setLoading(false);
     });
 
-    // Fetch Holdings (庫存)
     const qHoldings = query(collection(db, 'artifacts', appId, 'public', 'data', 'holdings'));
     const unsubHoldings = onSnapshot(qHoldings, (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      records.sort((a, b) => a.stockId.localeCompare(b.stockId)); // Sort by Stock ID
+      records.sort((a, b) => a.stockId.localeCompare(b.stockId)); 
       setHoldings(records);
     });
 
@@ -279,6 +298,20 @@ const App = () => {
   }, [user]);
 
   // --- Actions ---
+
+  const handleInstallApp = async () => {
+      // 若瀏覽器已準備好自動安裝提示，則直接調用
+      if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === 'accepted') {
+              setDeferredPrompt(null);
+          }
+      } else {
+          // 若環境不支援自動彈出 (例如 iOS Safari，或 iframe 內)，則顯示圖文教學
+          setShowInstallGuide(true);
+      }
+  };
 
   const handleImportData = async () => {
     if (!user) return;
@@ -320,7 +353,6 @@ const App = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 自動帶入邏輯：庫存張數 + 配息金額
   useEffect(() => {
     if (!formData.stockId || formData.stockId.length < 4 || editingId) return;
 
@@ -329,13 +361,11 @@ const App = () => {
     let newDividend = formData.dividendPerLot;
     let newLots = formData.lots;
 
-    // 1. 自動帶入庫存
     const holding = holdings.find(h => h.stockId === stockIdUpper);
     if (holding) {
         newLots = holding.lots;
     }
 
-    // 2. 自動帶入配息金額 (查詢內建 PDF 資料庫)
     const seedMatch = PDF_DATA.find(d => 
         d.year === parseInt(formData.year) && 
         d.month === parseInt(formData.month) && 
@@ -360,16 +390,13 @@ const App = () => {
 
   }, [formData.stockId, formData.year, formData.month, holdings, editingId]);
 
-  // 當使用者手動修改配息時，隱藏自動帶入提示
   const handleDividendChange = (e) => {
       setFormData({...formData, dividendPerLot: e.target.value});
       setAutoFilled(false);
   };
 
-  // 外部連結查詢功能
   const openYahooFinance = () => {
       if (!formData.stockId) return;
-      // 使用 Yahoo 股市的配息頁面，通常比較穩定且手機友善
       const url = `https://tw.stock.yahoo.com/quote/${formData.stockId}/dividend`;
       window.open(url, '_blank');
   };
@@ -378,7 +405,6 @@ const App = () => {
     e.preventDefault();
     if (!user) return;
 
-    // 錯誤防護：確保輸入值為數字
     const dividend = parseFloat(formData.dividendPerLot) || 0;
     const lots = parseFloat(formData.lots) || 0;
 
@@ -411,14 +437,11 @@ const App = () => {
   };
 
   // --- Inventory Actions ---
-
-  // 同步：從股息紀錄中找出每檔股票「最新」的張數，更新到庫存
   const handleSyncHoldings = async () => {
       if (!window.confirm("系統將會掃描所有「股息明細」，並以最新的張數更新庫存。確定要執行嗎？")) return;
       
       const latestMap = {};
       
-      // 找出每檔股票最新的紀錄
       data.forEach(item => {
           const currentDate = item.year * 100 + item.month;
           if (!latestMap[item.stockId] || currentDate > latestMap[item.stockId].date) {
@@ -428,10 +451,8 @@ const App = () => {
 
       const batch = [];
       Object.keys(latestMap).forEach(stockId => {
-          // Check if we need to update
           const currentHolding = holdings.find(h => h.stockId === stockId);
           if (!currentHolding || currentHolding.lots !== latestMap[stockId].lots) {
-               // Use stockId as doc ID for easy access
                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'holdings', stockId);
                batch.push(setDoc(docRef, { 
                    stockId, 
@@ -485,7 +506,6 @@ const App = () => {
 
   // --- Calculations ---
   const stats = useMemo(() => {
-    // 修正：改為比較「選取的年份 (當年)」與「選取的年份 - 1 (去年)」
     const currentYear = dashboardYear;
     const prevYear = dashboardYear - 1;
 
@@ -514,7 +534,7 @@ const App = () => {
         .sort((a, b) => b.value - a.value);
 
     return { totalCurrent, totalPrev, totalAll, monthlyData, stockData, currentYear, prevYear };
-  }, [data, dashboardYear]); // 相依性加入 dashboardYear
+  }, [data, dashboardYear]); 
 
 
   // --- Render ---
@@ -528,34 +548,77 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20 relative">
       
+      {/* 彈出式安裝教學 Modal */}
+      {showInstallGuide && (
+          <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+                  <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <Smartphone className="w-5 h-5 text-blue-600" />
+                          將程式安裝到桌面/主畫面
+                      </h3>
+                      <button onClick={() => setShowInstallGuide(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors">
+                          <X className="w-5 h-5" />
+                      </button>
+                  </div>
+                  <div className="p-6 space-y-4 text-sm text-slate-600">
+                      <p className="font-medium text-slate-800">只需幾個步驟，就能讓它變成獨立 APP：</p>
+                      
+                      <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                          <p className="font-bold text-blue-800 mb-2">📱 在 iPhone / iPad 上 (Safari)：</p>
+                          <ol className="list-decimal pl-5 space-y-1">
+                              <li>點擊瀏覽器底部的 <span className="inline-block border border-slate-300 rounded px-1 bg-white">分享圖示</span> (有向上箭頭的方塊)。</li>
+                              <li>往下滑動，選擇 <strong>「加入主畫面」</strong>。</li>
+                              <li>點擊右上角「新增」即可！</li>
+                          </ol>
+                      </div>
+
+                      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
+                          <p className="font-bold text-emerald-800 mb-2">💻 在電腦 / Android 手機上 (Chrome)：</p>
+                          <ol className="list-decimal pl-5 space-y-1">
+                              <li>點擊 Chrome 右上角的 <strong>⋮ 選單</strong>。</li>
+                              <li>選擇 <strong>「儲存並分享」</strong> (Save and share)。</li>
+                              <li>點擊 <strong>「安裝網頁為應用程式」</strong> 即可！</li>
+                              <li className="text-xs text-emerald-600 mt-1">* 舊版 Chrome 可能直接顯示「安裝存股配息管家」或「加到主畫面」。</li>
+                          </ol>
+                      </div>
+                  </div>
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                      <button onClick={() => setShowInstallGuide(false)} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                          我知道了
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-2 rounded-lg">
               <TrendingUp className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent hidden sm:block">
-              存股配息管家 (共用版)
+              存股配息管家
             </h1>
           </div>
           
           <div className="flex gap-2 items-center">
-            {/* 顯示目前模式 */}
-            <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
-               <Users className="w-3 h-3" />
-               已連線至共用資料庫
-            </span>
-
+            {/* 安裝 APP 按鈕 */}
             <button 
-                onClick={handleImportData}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+                onClick={handleInstallApp}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-md hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm"
             >
-                <UploadCloud className="w-4 h-4" />
-                匯入範例
+                <Download className="w-4 h-4" />
+                安裝 App
             </button>
+
+            <span className="hidden md:flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
+               <Users className="w-3 h-3" /> 共用資料庫
+            </span>
           </div>
         </div>
       </header>
@@ -824,7 +887,6 @@ const App = () => {
                                         onChange={(e) => setFormData({...formData, stockId: e.target.value})}
                                         required
                                     />
-                                    {/* 新增配息查詢按鈕 */}
                                     {formData.stockId.length >= 4 && (
                                         <button
                                             type="button"
